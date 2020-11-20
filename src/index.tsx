@@ -1,7 +1,6 @@
 import * as React from "react";
-import { render } from "react-dom";
+import ReactDOM from "react-dom";
 
-import App from "./App";
-
-const rootElement = document.getElementById("root");
-render(<App />, rootElement);
+const element = <h1 title="foo">Hello</h1>
+const container = document.getElementById("root")
+ReactDOM.render(element, container)
