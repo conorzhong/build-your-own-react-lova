@@ -1,14 +1,20 @@
-type ReactElement = {
-  type: string;
-  props: ReactElementProps;
-};
-type ReactElementProps = {
-  title?: string;
-  children?: ReactElement[] | string;
-  nodeValue?: string;
+type ReactTextElement = {
+  type: "TEXT_ELEMENT";
+  props: {
+    nodeValue: string;
+    children: never[];
+  };
 };
 
-function createTextElement(text: string): ReactElement {
+type ReactElement = {
+  type: string;
+  props: {
+    title: string;
+    children: (ReactElement | ReactTextElement)[];
+  };
+};
+
+function createTextElement(text: string): ReactTextElement {
   return {
     type: "TEXT_ELEMENT",
     props: {
@@ -20,8 +26,8 @@ function createTextElement(text: string): ReactElement {
 
 function createElement(
   type: string,
-  props: ReactElementProps,
-  ...children: ReactElement[]
+  props: ReactElement["props"],
+  ...children: (ReactElement | string)[]
 ): ReactElement {
   return {
     type,
@@ -34,8 +40,30 @@ function createElement(
   };
 }
 
+function render(
+  element: ReactElement | ReactTextElement,
+  container: HTMLElement | Text
+) {
+  const dom =
+    element.type === "TEXT_ELEMENT"
+      ? document.createTextNode("")
+      : document.createElement(element.type);
+
+  const isProperty: (key: string) => boolean = (key) => key !== "children";
+  Object.keys(element.props)
+    .filter(isProperty)
+    .forEach((key) => (dom[key] = element.props[key]));
+
+  element.props.children.forEach((child) => {
+    render(child, dom);
+  });
+
+  container.appendChild(dom);
+}
+
 const Didact = {
-  createElement
+  createElement,
+  render
 };
 
 /** @jsx Didact.createElement */
@@ -45,5 +73,6 @@ const element = (
     <b />
   </div>
 );
+
 const container = document.getElementById("root");
-ReactDOM.render(element, container);
+Didact.render(element, container!);
