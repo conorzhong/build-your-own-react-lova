@@ -96,17 +96,33 @@ function commitWork(fiber?: Fiber) {
   if (!fiber) {
     return;
   }
-  const domParent = fiber.parent!.dom!; // 因为是 wipRoot.child 且非 root fiber 都有 parent，构建完 fiber tree 后都有 dom
+
+  // for function component
+  let domParentFiber = fiber.parent!;
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent!;
+  }
+  const domParent = domParentFiber.dom;
+
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
-    updateDom(fiber.dom, fiber.alternate?.props, fiber.props);
+    updateDom(fiber.dom, fiber.alternate!.props, fiber.props);
   } else if (fiber.effectTag === "DELETION") {
-    domParent.removeChild(fiber.dom);
+    commitDeletion(fiber, domParent);
   }
-  domParent.appendChild(fiber.dom!);
+
   commitWork(fiber.child);
   commitWork(fiber.sibling);
+}
+
+// for function component
+function commitDeletion(fiber: Fiber, domParent: HTMLElement | Text) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child!, domParent);
+  }
 }
 
 function render(element: Fiber, container: HTMLElement | Text) {
@@ -158,14 +174,12 @@ function workLoop(deadline: any) {
 window.requestIdleCallback(workLoop);
 
 function performUnitOfWork(fiber: Fiber): Fiber | undefined {
-  // add dom node
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
   }
-
-  // create new fibers
-  const elements = fiber.props.children;
-  reconcileChildren(fiber, elements);
 
   // return next unit of work
   if (fiber.child) {
@@ -178,6 +192,18 @@ function performUnitOfWork(fiber: Fiber): Fiber | undefined {
     }
     nextFiber = nextFiber.parent;
   }
+}
+
+function updateFunctionComponent(fiber: Fiber) {
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber: Fiber) {
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+  reconcileChildren(fiber, fiber.props.children);
 }
 
 // Here we will reconcile the old fibers with the new elements.
@@ -244,15 +270,12 @@ const Didact = {
 };
 
 /** @jsx Didact.createElement */
-const element = (
-  <div id="foo">
-    <a>bar</a>
-    <b />
-  </div>
-);
-
-const container = document.getElementById("root");
-Didact.render(element, container!);
+function App(props: any) {
+  return <h1>Hi {props.name}</h1>;
+}
+const element = <App name="foo" />;
+const container = document.getElementById("root")!;
+Didact.render(element, container);
 
 /** requestIdleCallback */
 // https://github.com/Microsoft/TypeScript/issues/21309#issuecomment-376338415
