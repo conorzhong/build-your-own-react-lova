@@ -30,12 +30,8 @@ function createDom(fiber: Fiber) {
       ? document.createTextNode("")
       : document.createElement(fiber.type!); // root fiber 没有 type，但是其 dom 就是传入的 container
 
-  const isProperty = (key: string) => key !== "children";
-  Object.keys(fiber.props)
-    .filter(isProperty)
-    .forEach((name) => {
-      dom[name] = fiber.props[name];
-    });
+  updateDom(dom, {}, fiber.props);
+
   return dom;
 }
 
@@ -151,6 +147,7 @@ type Fiber = {
   sibling?: Fiber;
   alternate?: Fiber | null; // This property is a link to the old fiber, the fiber that we committed to the DOM in the previous commit phase.
   effectTag?: string;
+  hooks?: any[];
 };
 let nextUnitOfWork: Fiber | null | undefined = null;
 let wipRoot: Fiber | null = null;
@@ -194,9 +191,48 @@ function performUnitOfWork(fiber: Fiber): Fiber | undefined {
   }
 }
 
+let wipFiber: Fiber | null = null;
+let hookIndex: number | null = null; //  keep track of the current hook index.
+
 function updateFunctionComponent(fiber: Fiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = []; // support calling useState several times in the same
+
   const children = [fiber.type(fiber.props)];
   reconcileChildren(fiber, children);
+}
+
+function useState(initial: any) {
+  const oldHook =
+    wipFiber!.alternate &&
+    wipFiber!.alternate.hooks &&
+    wipFiber!.alternate.hooks[hookIndex];
+  const hook: any = {
+    state: oldHook ? oldHook.state : initial,
+    queue: []
+  };
+
+  const actions = oldHook ? oldHook.queue : [];
+  actions.forEach((action: any) => {
+    hook.state = action(hook.state);
+  });
+
+  const setState = (action: any) => {
+    hook.queue.push(action);
+    wipRoot = {
+      // like render
+      dom: currentRoot!.dom,
+      props: currentRoot!.props,
+      alternate: currentRoot!
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
+
+  wipFiber!.hooks!.push(hook);
+  hookIndex!++;
+  return [hook.state, setState];
 }
 
 function updateHostComponent(fiber: Fiber) {
@@ -243,7 +279,7 @@ function reconcileChildren(wipFiber: Fiber, elements: Fiber[]) {
         effectTag: "PLACEMENT"
       };
     }
-    if (oldFiber && sameType) {
+    if (oldFiber && !sameType) {
       // delete the oldFiber's node
       oldFiber.effectTag = "DELETION";
       deletions!.push(oldFiber);
@@ -255,7 +291,7 @@ function reconcileChildren(wipFiber: Fiber, elements: Fiber[]) {
 
     if (index === 0) {
       wipFiber.child = newFiber!;
-    } else {
+    } else if (element) {
       prevSibling!.sibling = newFiber!; // 第0次循环，prevSibling 会被初始化
     }
 
@@ -266,14 +302,24 @@ function reconcileChildren(wipFiber: Fiber, elements: Fiber[]) {
 
 const Didact = {
   createElement,
-  render
+  render,
+  useState
 };
 
 /** @jsx Didact.createElement */
-function App(props: any) {
-  return <h1>Hi {props.name}</h1>;
+function Counter() {
+  const [state, setState] = Didact.useState(1);
+  return (
+    <h1
+      onClick={() => {
+        setState((c) => c + 1);
+      }}
+    >
+      Count: {state}
+    </h1>
+  );
 }
-const element = <App name="foo" />;
+const element = <Counter />;
 const container = document.getElementById("root")!;
 Didact.render(element, container);
 
