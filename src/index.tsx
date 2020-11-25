@@ -39,13 +39,29 @@ function createDom(fiber: Fiber) {
   return dom;
 }
 
+function commitRoot() {
+  // add nodes(the whole fiber tree) to dom
+  commitWork(wipRoot!.child) // 调用的时候判断了 wipRoot 非空，注意这里是 child
+  wipRoot = null
+}
+function commitWork(fiber?: Fiber) {
+  if(!fiber){
+    return;
+  }
+  const domParent = fiber.parent!.dom!;  // 因为是 wipRoot.child 且非 root fiber 都有 parent，构建完 fiber tree 后都有 dom
+  domParent.appendChild(fiber.dom!);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
 function render(element: Fiber, container: HTMLElement | Text) {
-  nextUnitOfWork = {
+  wipRoot = { // keep track of the root of the fiber tree.
     dom: container,
     props: {
       children: [element]
     }
   };
+  nextUnitOfWork = wipRoot;
 }
 
 type Fiber = {
@@ -61,6 +77,7 @@ type Fiber = {
   sibling?: Fiber;
 };
 let nextUnitOfWork: Fiber | null | undefined = null;
+let wipRoot: Fiber | null = null
 
 function workLoop(deadline: any) {
   let shouldYield = false;
@@ -68,6 +85,11 @@ function workLoop(deadline: any) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     shouldYield = deadline.timeRemaining() < 1;
   }
+
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
+  }
+
   window.requestIdleCallback(workLoop);
 }
 
@@ -77,9 +99,6 @@ function performUnitOfWork(fiber: Fiber): Fiber | undefined {
   // add dom node
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
-  }
-  if (fiber.parent) {
-    fiber.parent.dom!.appendChild(fiber.dom); // 前面已经确保 fiber 上有 dom了
   }
 
   // create new fibers
