@@ -18,8 +18,11 @@ interface Window {
   cancelIdleCallback: (handle: RequestIdleCallbackHandle) => void;
 }
 
+/** fiber 节点类型 */
 type Fiber = {
   type: string | "TEXT_FIBER" | "ROOT_FIBER" | Function;
+
+  /** 对应的dom节点 */
   dom?: HTMLElement | Text;
   props: {
     children: Fiber[];
@@ -27,20 +30,27 @@ type Fiber = {
     [prop: string]: any;
   };
 
+  /** fiber 树指针 */
   parent?: Fiber;
   child?: Fiber;
   sibling?: Fiber;
   alternate?: Fiber;
 
+  /** 副作用标签 */
   effectTag?: "UPDATE" | "PLACEMENT" | "DELETION";
 
+  /** 维护的hook列表 */
   hooks?: Hook<any>[];
 };
 
+/** 下一工作单元 */
 let nextUnitOfWork: Fiber | undefined;
+/** workInProgressRoot 正在处理的根fiber */
 let wipRoot: Fiber | undefined;
-let currentRoot: Fiber | undefined; // last fiber tree we committed to the DOM
-let deletions: Fiber[] | undefined; // 每次构建 wipRoot 都要初始化
+/** dom中现在的根fiber，也就是上一次我们commit的根fiber */
+let currentRoot: Fiber | undefined;
+/** 每次构建 wipRoot 都要初始化，每次commit的时候要先执行（effectTag:"DELETION") */
+let deletions: Fiber[] | undefined;
 
 function createTextElement(text: string): Fiber {
   return {
@@ -70,10 +80,15 @@ function createElement(
   };
 }
 
+/**
+ * 根据fiber中的type，返回dom
+ *
+ * 注意FC没有dom
+ */
 function createDOMOf(fiber: Fiber): HTMLElement | Text {
   return fiber.type === "TEXT_FIBER"
     ? document.createTextNode("")
-    : document.createElement(fiber.type as string); // Function component 没有 dom
+    : document.createElement(fiber.type as string);
 }
 
 const isEvent = (key: string) => key.startsWith("on"),
@@ -83,6 +98,10 @@ const isEvent = (key: string) => key.startsWith("on"),
   isGone = <T extends object>(next: T) => (key: keyof T) => !(key in next),
   isNewOrGone = <T extends object>(prev: T, next: T) =>
     isNew<T>(prev, next) || isGone<T>(next);
+
+/**
+ * 更新fiber的dom属性
+ */
 function updateDOMOf(fiber: Fiber) {
   const dom = fiber.dom!,
     prevProps: Fiber["props"] = fiber.alternate?.props ?? { children: [] },
@@ -123,11 +142,13 @@ function updateDOMOf(fiber: Fiber) {
     });
 }
 
+/** 将dom附在fiber的dom字段上，并调用updateDOMOf进行一次更新 */
 function attachDOM2(fiber: Fiber) {
   fiber.dom = createDOMOf(fiber);
   updateDOMOf(fiber);
 }
 
+/** 构建fiber树 */
 function reconcileChildren(wipFiber: Fiber, elements: Fiber[]) {
   // create new fibers
   let index = 0;
@@ -186,6 +207,11 @@ function reconcileChildren(wipFiber: Fiber, elements: Fiber[]) {
   }
 }
 
+/**
+ * 更新Host组件
+ * 
+ * 先添加dom字段，然后调用reconcileChildren
+ */
 function updateHostComponent(fiber: Fiber) {
   if (!fiber.dom) {
     attachDOM2(fiber);
@@ -203,6 +229,11 @@ type SetStateWithAction<T> = (action: Action<T>) => void;
 let wipFiber: Fiber;
 let hookIndex: number;
 
+/**
+ * 更新FC，调用 reconcileChildren，children通过调用函数获得
+ * 
+ * 
+ */
 function updateFunctionComponent(fiber: Fiber) {
   wipFiber = fiber;
   hookIndex = 0;
@@ -244,6 +275,9 @@ function useState<T>(initial: T): [T, SetStateWithAction<T>] {
   return [hook.state, setState];
 }
 
+/**
+ * 根据fiber类型进行更新，返回fiber树当前fiber的下一个（child、sibling）
+ */
 function performUnitOfWork(fiber: Fiber) {
   const isFunctionComponent = fiber.type instanceof Function;
   if (isFunctionComponent) {
@@ -267,6 +301,11 @@ function performUnitOfWork(fiber: Fiber) {
   }
 }
 
+/**
+ * commit dom删除，递归调用
+ * @param fiber 
+ * @param domParent 
+ */
 function commitDeletion(fiber: Fiber, domParent: HTMLElement | Text) {
   if (fiber.dom) {
     domParent.removeChild(fiber.dom);
@@ -274,6 +313,10 @@ function commitDeletion(fiber: Fiber, domParent: HTMLElement | Text) {
     commitDeletion(fiber.child!, domParent);
   }
 }
+/**
+ * 向dom提交（使用effectTag），递归调用
+ * @param fiber 
+ */
 function commitWork(fiber?: Fiber) {
   if (!fiber) return;
 
@@ -303,6 +346,11 @@ function commitRoot() {
   wipRoot = undefined;
 }
 
+/**
+ * 触发一次渲染过程
+ * @param fiber 
+ * @param container 
+ */
 function render(fiber: Fiber, container: Fiber["dom"]) {
   if (!container) {
     throw new Error("no container");
